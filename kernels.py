@@ -113,7 +113,10 @@ def _matern_kernel_fn(
 
 
 def _matern_omega_fn(key: PRNGKey, n_input_dims: int, n_features: int, df: float):
-    return jr.t(key, df=df, shape=(n_input_dims, n_features))
+    key1, key2 = jr.split(key, 2)
+    omega = jr.normal(key1, shape=(n_input_dims, n_features))
+    u = jr.chisquare(key2, df, shape=(1, n_features))
+    return omega * jnp.sqrt(df / u)
 
 
 def matern12_feature_params_fn(key: PRNGKey, n_input_dims: int, n_features: int):
