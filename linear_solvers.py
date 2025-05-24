@@ -39,7 +39,7 @@ def _pivoted_cholesky(
     pi = jnp.arange(n)
 
     for m in range(rank):
-        i = m + jnp.argmax(d[m:])
+        i = m + jnp.argmax(d[pi[m:]])
         temp = pi[m]
         pi = pi.at[m].set(pi[i])
         pi = pi.at[i].set(temp)
@@ -104,7 +104,7 @@ def cg_solver(
 
     # P = lambda x: x
     P = _P
-    
+
     targets_norm = jnp.linalg.norm(targets, axis=0, keepdims=True) + norm_eps
     targets = targets / targets_norm
     v0 = v0 / targets_norm
@@ -159,7 +159,7 @@ def ap_solver(
     n = x.shape[0]
     n_blocks = (n - 1) // batch_size
     last_block_size = n - n_blocks * batch_size
-    
+
     blocks = jnp.reshape(jnp.arange(n_blocks * batch_size), (n_blocks, batch_size))
     last_block = jnp.arange(n_blocks * batch_size, n)
 
@@ -170,7 +170,7 @@ def ap_solver(
 
     def _chol_mat(carry, i):
         return carry, jnp.linalg.cholesky(_kernel_block(blocks[i]))
-    
+
     _, chol_mats = jax.lax.scan(_chol_mat, init=None, xs=jnp.arange(n_blocks))
     last_chol_mat = jnp.linalg.cholesky(_kernel_block(last_block))
 
@@ -199,7 +199,7 @@ def ap_solver(
 
         solve_batch = jax.scipy.linalg.cho_solve((chol, True), r[idx])
         return v.at[idx].set(v[idx] + solve_batch), r - K_batch @ solve_batch
-    
+
     def _true_fun(chol_idx, v, r):
         idx = jax.lax.dynamic_slice(blocks, (chol_idx, 0), (1, batch_size)).squeeze()
         block_size = batch_size
@@ -256,7 +256,7 @@ def sgd_solver(
     n = x.shape[0]
     key = jax.random.PRNGKey(random_seed)
     all_idx = jnp.arange(n)
-    
+
     targets_norm = jnp.linalg.norm(targets, axis=0, keepdims=True) + norm_eps
     targets = targets / targets_norm
     v0 = v0 / targets_norm
