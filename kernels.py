@@ -1,7 +1,7 @@
 from chex import Array, PRNGKey
 from functools import partial
 from typing import Callable
-from structs import KernelParams, FeatureParams
+from structs import KernelParams, FeatureParams, ModelParams
 import jax
 import jax.numpy as jnp
 import jax.random as jr
@@ -67,8 +67,9 @@ def feature_fn(x: Array, kernel_params: KernelParams, feature_params: FeaturePar
     return _feature_fn_sin_cos(x, kernel_params, feature_params)
 
 
-def feature_vec_prod(x: Array, kernel_params: KernelParams, feature_params: FeatureParams, vec: Array, batch_size: int = 1):
+def feature_vec_prod_vanilla(x: Array, eps: Array, model_params: ModelParams, feature_params: FeatureParams, vec: Array, batch_size: int = 1):
     n, d = x.shape
+    kernel_params = model_params.kernel_params
     padding = (batch_size - (n % batch_size)) % batch_size
     x = jnp.concatenate([x, jnp.zeros((padding, d))], axis=0)
 
@@ -77,7 +78,7 @@ def feature_vec_prod(x: Array, kernel_params: KernelParams, feature_params: Feat
 
     xs = jnp.reshape(jnp.arange(x.shape[0]), (-1, batch_size))
     _, prod = jax.lax.scan(_f, None, xs)
-    return jnp.squeeze(jnp.reshape(prod, (x.shape[0], -1)))[:n]
+    return jnp.squeeze(jnp.reshape(prod, (x.shape[0], -1)))[:n] + model_params.noise_scale * eps
 
 
 def rbf_kernel_fn(x1: Array, x2: Array, kernel_params: KernelParams):

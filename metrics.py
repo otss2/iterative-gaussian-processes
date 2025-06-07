@@ -1,10 +1,10 @@
 from functools import partial
 from typing import Callable
 from structs import Dataset, ModelParams, TrainState
-from kernels import feature_vec_prod
 import jax
 import jax.numpy as jnp
 from chex import Array
+import jax.random as jr
 
 
 def _rmse(y_pred, y_gt):
@@ -72,11 +72,12 @@ def compute_metrics_exact(
     return mll, train_rmse, train_llh, test_rmse, test_llh
 
 
-@partial(jax.jit, static_argnums=2)
+@partial(jax.jit, static_argnums=(2, 3))
 def compute_metrics_samples(
     train_ds: Dataset,
     test_ds: Dataset,
     kernel_fn: Callable,
+    feature_vec_prod_fn: Callable,
     model_params: ModelParams,
     train_state: TrainState,
     batch_size: int = 1,
@@ -97,8 +98,8 @@ def compute_metrics_samples(
     y_pred_mean = temp[:, 0]
     correction = temp[:, 1:]
 
-    f0 = feature_vec_prod(
-        train_ds.x, model_params.kernel_params, train_state.feature_params,
+    f0 = feature_vec_prod_fn(
+        train_ds.x, train_state.eps, model_params, train_state.feature_params,
         train_state.w, batch_size=batch_size)
     
     y_pred_std = jnp.sqrt(
@@ -112,8 +113,11 @@ def compute_metrics_samples(
     y_pred_mean = temp[:, 0]
     correction = temp[:, 1:]
 
-    f0 = feature_vec_prod(
-        test_ds.x, model_params.kernel_params, train_state.feature_params,
+    # can't give train_state.eps here as not same shape
+    key, feature_params_key, w_key, eps_key = jr.split(train_state.key, 4)
+    eps = jr.normal(eps_key, shape=(test_ds.x.shape[0], train_state.v0.shape[1] - 1))
+    f0 = feature_vec_prod_fn(
+        test_ds.x, eps, model_params, train_state.feature_params,
         train_state.w, batch_size=batch_size)
     
     y_pred_std = jnp.sqrt(

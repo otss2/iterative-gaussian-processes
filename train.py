@@ -126,4 +126,5 @@ def _main(cfg: TrainConfig, checkpoint: dict, run_name: str, run_id: str):
 
 
 if __name__ == "__main__":
+    #jax_config.update("jax_disable_jit", True)
     main()
