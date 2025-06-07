@@ -1,0 +1,3 @@
+# @package _global_
+dataset_name: forest
+seed: 67890  # first seed 

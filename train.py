@@ -1,4 +1,5 @@
 from jax import config as jax_config
+
 jax_config.update("jax_enable_x64", True)
 
 from mll_optimiser import fit
@@ -54,8 +55,8 @@ def get_wandb_name(cfg: TrainConfig):
     return wandb_name
 
 
-@hydra.main(config_path=".", config_name="config", version_base=None)
-def main(cfg: omegaconf.DictConfig):
+@hydra.main(config_path="conf", config_name="config", version_base=None)
+def main(cfg: TrainConfig):
     os.environ["WANDB_API_KEY"] = cfg.wandb_api_key
     run_name = get_wandb_name(cfg)
     checkpoint_path = f"./checkpoints/{run_name}.npy"
@@ -63,7 +64,7 @@ def main(cfg: omegaconf.DictConfig):
     if cfg.checkpoint_interval > 0 and os.path.exists(checkpoint_path):
         print("Loading checkpoint...")
         checkpoint = np.load(checkpoint_path, allow_pickle=True).item()
-        run_id = checkpoint['run_id']
+        run_id = checkpoint["run_id"]
         print(f"Resuming run at i = {checkpoint['step']} ...")
     else:
         if cfg.checkpoint_interval > 0:
@@ -77,13 +78,11 @@ def main(cfg: omegaconf.DictConfig):
         project=cfg.wandb_project,
         entity=cfg.wandb_entity,
         settings=wandb.Settings(start_method="thread"),
-        config=omegaconf.OmegaConf.to_container(
-            cfg, resolve=True, throw_on_missing=True
-        ),
+        config=omegaconf.OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode="online" if cfg.log_wandb else "disabled",
         name=get_wandb_name(cfg),
         id=run_id,
-        resume="allow"
+        resume="allow",
     ) as run:
         wandb_cfg = omegaconf.OmegaConf.create(wandb.config.as_dict())
         cfg = omegaconf.OmegaConf.merge(cfg, wandb_cfg)
@@ -102,22 +101,12 @@ def _main(cfg: TrainConfig, checkpoint: dict, run_name: str, run_id: str):
     estimator = getattr(gradient_estimators, f"{cfg.estimator_name}_gradient")
     solver = getattr(linear_solvers, f"{cfg.solver_name}_solver")
 
-    checkpoint = fit(
-        train_ds,
-        test_ds,
-        kernel_fn,
-        kernel_grad_fn,
-        feature_params_fn,
-        estimator,
-        solver,
-        cfg,
-        checkpoint
-    )
-    checkpoint['run_id'] = run_id
+    checkpoint = fit(train_ds, test_ds, kernel_fn, kernel_grad_fn, feature_params_fn, estimator, solver, cfg, checkpoint)
+    checkpoint["run_id"] = run_id
 
-    print("noise_scale: ", checkpoint['model_params'].noise_scale)
-    print("signal_scale: ", checkpoint['model_params'].kernel_params.signal_scale)
-    print("length_scale: ", checkpoint['model_params'].kernel_params.length_scale)
+    print("noise_scale: ", checkpoint["model_params"].noise_scale)
+    print("signal_scale: ", checkpoint["model_params"].kernel_params.signal_scale)
+    print("length_scale: ", checkpoint["model_params"].kernel_params.length_scale)
 
     if cfg.checkpoint_interval > 0:
         print(f"Saving checkpoint to ./checkpoints/{run_name}.npy")
@@ -126,5 +115,5 @@ def _main(cfg: TrainConfig, checkpoint: dict, run_name: str, run_id: str):
 
 
 if __name__ == "__main__":
-    #jax_config.update("jax_disable_jit", True)
+    # jax_config.update("jax_disable_jit", True)
     main()

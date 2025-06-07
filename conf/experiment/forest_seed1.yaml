@@ -1,0 +1,4 @@
+# @package _global_
+# Forest dataset experiment with seed 1
+dataset_name: forest
+seed: 12345  # first seed 
