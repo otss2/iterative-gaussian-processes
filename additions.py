@@ -42,17 +42,19 @@ def estimate_init_params(train_ds: Dataset, cfg: TrainConfig):
 def feature_vec_prod_sym(
     x_train: Array,
     x_test: Array,
-    eps: Array,  # unused, kept for signature compatibility
     model_params: ModelParams,
     feature_params: FeatureParams,
-    vec: Array,  # this is your standard-normal u, shape (2D, num_samples)
+    w1: Array,  # this is shape (2D, num_samples)
+    w2: Array,  # this is shape (N_train + N_test, num_samples)
     batch_size: int = 1,
 ):
     # Concatenate train and test points
     x = jnp.concatenate([x_train, x_test], axis=0)
     n_train = x_train.shape[0]
 
-    num_features, num_samples = vec.shape
+    vec = w2
+
+    num_features, num_samples = w1.shape
     num_features //= 2
     # kernel params
     kernel_params = model_params.kernel_params
@@ -71,8 +73,6 @@ def feature_vec_prod_sym(
 
     # 3) build the "M = V S^{-1}" transform (2D x 2D)
     M = eigvecs * invS[None, :]
-
-    vec = eps  # need (N + N*, num_samples)
 
     # 4) form Z = Phi^T u (2D x num_samples)
     Z = batched_build_Z(

@@ -61,12 +61,14 @@ def feature_fn(x: Array, kernel_params: KernelParams, feature_params: FeaturePar
 
 
 def feature_vec_prod_vanilla(
-    x_train: Array, x_test: Array, eps: Array, model_params: ModelParams, feature_params: FeatureParams, vec: Array, batch_size: int = 1
+    x_train: Array, x_test: Array, model_params: ModelParams, feature_params: FeatureParams, w1: Array, w2: Array, batch_size: int = 1
 ):
     # Concatenate train and test points
     x = jnp.concatenate([x_train, x_test], axis=0)
     n_train = x_train.shape[0]
     n_total, d = x.shape
+
+    vec = w1  # need shape (2*num_features, num_samples)
 
     padding = (batch_size - (n_total % batch_size)) % batch_size
     x = jnp.concatenate([x, jnp.zeros((padding, d))], axis=0)

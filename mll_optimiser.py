@@ -93,20 +93,21 @@ def fit(
                 if cfg.estimator_name == "standard":
                     key, z_key = jr.split(key)
                     z = jr.normal(z_key, shape=(train_ds.N, cfg.n_samples))
-                    train_state = TrainState(key=key, v0=v0, z=z, feature_params=None, w=None, eps=None, f0_train=None, f0_test=None)
+                    train_state = TrainState(key=key, v0=v0, z=z, feature_params=None, w1=None, w2=None, eps=None, f0_train=None, f0_test=None)
                 elif cfg.estimator_name == "pathwise":
                     if cfg.pathwise_init:
                         train_state = jnp.load("./download/pathwise_init.npy", allow_pickle=True).item()[cfg.dataset_name][
                             cfg.dataset_split
                         ]
                     else:
-                        key, feature_params_key, w_key, eps_key = jr.split(key, 4)
+                        key, feature_params_key, w1_key, w2_key, eps_key = jr.split(key, 5)
                         feature_params = feature_params_fn(feature_params_key, train_ds.D, cfg.n_features)
-                        w = jr.normal(w_key, shape=(cfg.n_features, cfg.n_samples))
+                        w1 = jr.normal(w1_key, shape=(cfg.n_features, cfg.n_samples))
+                        w2 = jr.normal(w2_key, shape=(train_ds.N + test_ds.N, cfg.n_samples))
                         eps = jr.normal(eps_key, shape=(train_ds.N + test_ds.N, cfg.n_samples))
-                        train_state = TrainState(key=key, v0=v0, z=None, feature_params=feature_params, w=w, eps=eps, f0_train=None, f0_test=None)
+                        train_state = TrainState(key=key, v0=v0, z=None, feature_params=feature_params, w1=w1, w2=w2, eps=eps, f0_train=None, f0_test=None)
             else:
-                train_state = TrainState(key=key, v0=v0, z=None, feature_params=None, w=None, eps=None, f0_train=None, f0_test=None)
+                train_state = TrainState(key=key, v0=v0, z=None, feature_params=None, w1=None, w2=None, eps=None, f0_train=None, f0_test=None)
         train_state = jax.tree.map(lambda x: float_cast(x) if isinstance(x, Array) and jnp.issubdtype(x, jnp.floating) else x, train_state)
 
         train_time = 0.0

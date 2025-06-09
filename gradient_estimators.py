@@ -102,7 +102,7 @@ def standard_gradient(
 
     model_params_grad = _trace_estimator(v[:, 0], v[:, 1:], b[:, 1:], model_params, train_ds, kernel_grad_fn)
 
-    train_state = TrainState(key=key, v0=v, z=train_state.z, feature_params=None, w=None, eps=None, f0_train=None, f0_test=None)
+    train_state = TrainState(key=key, v0=v, z=train_state.z, feature_params=None, w1=None, w2=None, eps=None, f0_train=None, f0_test=None)
     return train_state, model_params_grad, solver_iters, solver_time, r_norm_y, r_norm_z
 
 
@@ -123,7 +123,7 @@ def pathwise_gradient(
     max_epochs: int,
     batch_size: int,
 ):
-    v0, b, key, feature_params, w, eps, f0_train, f0_test = _pathwise_init(
+    v0, b, key, feature_params, w1, w2, eps, f0_train, f0_test = _pathwise_init(
         train_state,
         model_params,
         train_ds.x,
@@ -154,7 +154,7 @@ def pathwise_gradient(
 
     model_params_grad = _trace_estimator(v[:, 0], v[:, 1:], v[:, 1:], model_params, train_ds, kernel_grad_fn)
 
-    train_state = TrainState(key=key, v0=v, z=None, feature_params=feature_params, w=w, eps=eps, f0_train=f0_train, f0_test=f0_test)
+    train_state = TrainState(key=key, v0=v, z=None, feature_params=feature_params, w1=w1, w2=w2, eps=eps, f0_train=f0_train, f0_test=f0_test)
     return train_state, model_params_grad, solver_iters, solver_time, r_norm_y, r_norm_z
 
 
@@ -190,19 +190,21 @@ def _pathwise_init(
         v0 = train_state.v0
         key = train_state.key
         feature_params = train_state.feature_params
-        w = train_state.w
+        w1 = train_state.w1
+        w2 = train_state.w2
         eps = train_state.eps
     else:
         v0 = jnp.zeros_like(train_state.v0)
         n_samples = train_state.v0.shape[1] - 1
-        key, feature_params_key, w_key, eps_key = jr.split(train_state.key, 4)
+        key, feature_params_key, w1_key, w2_key, eps_key = jr.split(train_state.key, 5)
         feature_params = feature_params_fn(feature_params_key, x_train.shape[1], n_features)
-        w = jr.normal(w_key, shape=(n_features, n_samples))
+        w1 = jr.normal(w1_key, shape=(n_features, n_samples))
         n_tot = x_train.shape[0] + x_test.shape[0]
+        w2 = jr.normal(w2_key, shape=(n_tot, n_samples))
         eps = jr.normal(eps_key, shape=(n_tot, n_samples))
-    f0_train, f0_test = feature_vec_prod_fn(x_train, x_test, eps, model_params, feature_params, w, batch_size)
+    f0_train, f0_test = feature_vec_prod_fn(x_train, x_test, model_params, feature_params, w1, w2, batch_size)
 
     e = model_params.noise_scale * eps[: x_train.shape[0]]  # just augment to noisy samples for now
     z = f0_train + e
     b = jnp.concatenate([y[:, None], z], axis=1)
-    return v0, b, key, feature_params, w, eps, f0_train, f0_test
+    return v0, b, key, feature_params, w1, w2, eps, f0_train, f0_test
