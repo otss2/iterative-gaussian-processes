@@ -6,18 +6,45 @@ import argparse
 
 
 def find_yaml_configs(base_path):
-    """Find all yaml config files in the given path recursively."""
+    """Find all yaml config files in the given path recursively and sort them by dataset, split, and variant."""
     configs = []
-    for root, _, files in os.walk(base_path):
-        for file in files:
-            if file.endswith(".yaml") and not file.startswith("_"):  # Skip base configs
-                # Convert the path to be relative to the parent folder
-                full_path = os.path.join(root, file)
-                relative_path = os.path.relpath(full_path, base_path)
-                # Remove the .yaml extension
-                config_path = os.path.splitext(relative_path)[0]
-                configs.append(config_path)
-    return sorted(configs)  # Sort for consistent ordering
+    base_path = Path(base_path)
+
+    # Read dataset order from order.txt
+    order_file = base_path / "order.txt"
+    if not order_file.exists():
+        raise FileNotFoundError(f"order.txt not found in {base_path}")
+
+    dataset_order = order_file.read_text().strip().split("\n")
+
+    # For each dataset in order
+    for dataset in dataset_order:
+        dataset_path = base_path / dataset
+        if not dataset_path.exists():
+            continue
+
+        # Get all splits across vanilla and sym
+        all_splits = set()
+        for variant in ["vanilla", "sym"]:
+            variant_path = dataset_path / variant
+            if not variant_path.exists():
+                continue
+            for file in variant_path.glob("split*.yaml"):
+                split_num = int(file.stem.replace("split", ""))
+                all_splits.add(split_num)
+
+        # For each split number
+        for split_num in sorted(all_splits):
+            # First vanilla, then sym
+            for variant in ["vanilla", "sym"]:
+                config_path = dataset_path / variant / f"split{split_num}.yaml"
+                if config_path.exists():
+                    # Get path relative to base_path and remove .yaml extension
+                    relative_path = config_path.relative_to(base_path)
+                    config_name = str(relative_path.with_suffix(""))
+                    configs.append(config_name)
+
+    return configs  # Already sorted by our custom logic
 
 
 def main():
@@ -43,8 +70,8 @@ def main():
     for config in configs:
         print(f"  - {config}")
 
-    # Create the multirun command using +exp1= to append configs
-    override_str = f"'+exp1={','.join(configs)}'"
+    # Create the multirun command using e.g. +exp1= to append configs
+    override_str = f"'+{args.folder}={','.join(configs)}'"
 
     print("\nRunning command:")
     cmd = f"python train.py --multirun {override_str}"

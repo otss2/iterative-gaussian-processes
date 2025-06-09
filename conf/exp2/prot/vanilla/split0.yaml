@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - /config
+
+# Experiment-specific settings
+dataset_name: protein
+dataset_split: 0
+use_symmetric_features: false 

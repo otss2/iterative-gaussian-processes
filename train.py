@@ -63,7 +63,10 @@ def main(cfg: TrainConfig):
     hydra_cfg = hydra.core.hydra_config.HydraConfig.get()
     # Get the full config path from the runtime config
     try:
-        run_name = hydra_cfg.runtime.choices.exp1
+        # Get the first override group name from runtime choices
+        choices = hydra_cfg.runtime.choices
+        exp_folder = next(iter(choices))  # Gets the first key (e.g. 'exp1', 'exp2', etc)
+        run_name = choices[exp_folder]
     except:
         run_name = get_wandb_name(cfg)
     print(f"\nUsing run name: {run_name}")
@@ -124,5 +127,5 @@ def _main(cfg: TrainConfig, checkpoint: dict, run_name: str, run_id: str):
 
 
 if __name__ == "__main__":
-    #jax_config.update("jax_disable_jit", True)
+    # jax_config.update("jax_disable_jit", True)
     main()
