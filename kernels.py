@@ -28,17 +28,13 @@ def _phi_fn(key: PRNGKey, n_features: int):
     return jr.uniform(key=key, shape=(1, n_features), minval=-jnp.pi, maxval=jnp.pi)
 
 
-def _feature_params_fn_sin_cos(
-    key: PRNGKey, n_input_dims: int, n_features: int, omega_fn: Callable
-):
+def _feature_params_fn_sin_cos(key: PRNGKey, n_input_dims: int, n_features: int, omega_fn: Callable):
     assert n_features % 2 == 0
     omega = omega_fn(key, n_input_dims, int(n_features / 2))
     return FeatureParams(omega=omega, phi=None)
 
 
-def _feature_params_fn_cos(
-    key: PRNGKey, n_input_dims: int, n_features: int, omega_fn: Callable
-):
+def _feature_params_fn_cos(key: PRNGKey, n_input_dims: int, n_features: int, omega_fn: Callable):
     omega_key, phi_key = jr.split(key, 2)
     omega = omega_fn(omega_key, n_input_dims, n_features)
     phi = _phi_fn(phi_key, n_features)
@@ -56,10 +52,7 @@ def _feature_fn_sin_cos(x: Array, kernel_params: KernelParams, feature_params: F
 def _feature_fn_cos(x: Array, kernel_params: KernelParams, feature_params: FeatureParams):
     n_features = feature_params.omega.shape[1]
     norm = jnp.sqrt(2.0 / n_features)
-    feat = jnp.cos(
-        (x / kernel_params.length_scale[None, :]) @ feature_params.omega
-        + feature_params.phi
-    )
+    feat = jnp.cos((x / kernel_params.length_scale[None, :]) @ feature_params.omega + feature_params.phi)
     return kernel_params.signal_scale * norm * feat
 
 
@@ -67,24 +60,33 @@ def feature_fn(x: Array, kernel_params: KernelParams, feature_params: FeaturePar
     return _feature_fn_sin_cos(x, kernel_params, feature_params)
 
 
-def feature_vec_prod_vanilla(x: Array, eps: Array, model_params: ModelParams, feature_params: FeatureParams, vec: Array, batch_size: int = 1):
-    n, d = x.shape
-    kernel_params = model_params.kernel_params
-    padding = (batch_size - (n % batch_size)) % batch_size
+def feature_vec_prod_vanilla(
+    x_train: Array, x_test: Array, eps: Array, model_params: ModelParams, feature_params: FeatureParams, vec: Array, batch_size: int = 1
+):
+    # Concatenate train and test points
+    x = jnp.concatenate([x_train, x_test], axis=0)
+    n_train = x_train.shape[0]
+    n_total, d = x.shape
+
+    padding = (batch_size - (n_total % batch_size)) % batch_size
     x = jnp.concatenate([x, jnp.zeros((padding, d))], axis=0)
 
     def _f(carry, idx):
-        return carry, feature_fn(x[idx], kernel_params, feature_params) @ vec
+        return carry, feature_fn(x[idx], model_params.kernel_params, feature_params) @ vec
 
     xs = jnp.reshape(jnp.arange(x.shape[0]), (-1, batch_size))
     _, prod = jax.lax.scan(_f, None, xs)
-    return jnp.squeeze(jnp.reshape(prod, (x.shape[0], -1)))[:n] + model_params.noise_scale * eps
+    prod = jnp.squeeze(jnp.reshape(prod, (x.shape[0], -1)))[:n_total]
+
+    # Split back into train and test
+    f0_train = prod[:n_train]
+    f0_test = prod[n_train:]
+
+    return f0_train, f0_test
 
 
 def rbf_kernel_fn(x1: Array, x2: Array, kernel_params: KernelParams):
-    return (kernel_params.signal_scale**2) * jnp.exp(
-        -0.5 * _sq_dist(x1, x2, kernel_params.length_scale)
-    )
+    return (kernel_params.signal_scale**2) * jnp.exp(-0.5 * _sq_dist(x1, x2, kernel_params.length_scale))
 
 
 def rbf_kernel_grad_fn(x1: Array, x2: Array, kernel_params: KernelParams):
@@ -102,9 +104,7 @@ def rbf_feature_params_fn(key: PRNGKey, n_input_dims: int, n_features: int):
 _matern12_df, _matern32_df, _matern52_df = 1.0, 3.0, 5.0
 
 
-def _matern_kernel_fn(
-    x1: Array, x2: Array, kernel_params: KernelParams, df: float, normaliser: Callable
-):
+def _matern_kernel_fn(x1: Array, x2: Array, kernel_params: KernelParams, df: float, normaliser: Callable):
     sq_dist = _sq_dist(x1, x2, kernel_params.length_scale)
     dist = jnp.sqrt(sq_dist)
 
@@ -121,21 +121,15 @@ def _matern_omega_fn(key: PRNGKey, n_input_dims: int, n_features: int, df: float
 
 
 def matern12_feature_params_fn(key: PRNGKey, n_input_dims: int, n_features: int):
-    return _feature_params_fn_sin_cos(
-        key, n_input_dims, n_features, partial(_matern_omega_fn, df=_matern12_df)
-    )
+    return _feature_params_fn_sin_cos(key, n_input_dims, n_features, partial(_matern_omega_fn, df=_matern12_df))
 
 
 def matern32_feature_params_fn(key: PRNGKey, n_input_dims: int, n_features: int):
-    return _feature_params_fn_sin_cos(
-        key, n_input_dims, n_features, partial(_matern_omega_fn, df=_matern32_df)
-    )
+    return _feature_params_fn_sin_cos(key, n_input_dims, n_features, partial(_matern_omega_fn, df=_matern32_df))
 
 
 def matern52_feature_params_fn(key: PRNGKey, n_input_dims: int, n_features: int):
-    return _feature_params_fn_sin_cos(
-        key, n_input_dims, n_features, partial(_matern_omega_fn, df=_matern52_df)
-    )
+    return _feature_params_fn_sin_cos(key, n_input_dims, n_features, partial(_matern_omega_fn, df=_matern52_df))
 
 
 def _matern12_normaliser(dist: Array, sq_dist: Array):
@@ -151,21 +145,15 @@ def _matern52_normaliser(dist: Array, sq_dist: Array):
 
 
 def matern12_kernel_fn(x1: Array, x2: Array, kernel_params: KernelParams):
-    return _matern_kernel_fn(
-        x1, x2, kernel_params, df=_matern12_df, normaliser=_matern12_normaliser
-    )
+    return _matern_kernel_fn(x1, x2, kernel_params, df=_matern12_df, normaliser=_matern12_normaliser)
 
 
 def matern32_kernel_fn(x1: Array, x2: Array, kernel_params: KernelParams):
-    return _matern_kernel_fn(
-        x1, x2, kernel_params, df=_matern32_df, normaliser=_matern32_normaliser
-    )
+    return _matern_kernel_fn(x1, x2, kernel_params, df=_matern32_df, normaliser=_matern32_normaliser)
 
 
 def matern52_kernel_fn(x1: Array, x2: Array, kernel_params: KernelParams):
-    return _matern_kernel_fn(
-        x1, x2, kernel_params, df=_matern52_df, normaliser=_matern52_normaliser
-    )
+    return _matern_kernel_fn(x1, x2, kernel_params, df=_matern52_df, normaliser=_matern52_normaliser)
 
 
 def matern12_kernel_grad_fn(x1: Array, x2: Array, kernel_params: KernelParams):

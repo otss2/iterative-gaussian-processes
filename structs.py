@@ -36,3 +36,5 @@ class TrainState(NamedTuple):
     feature_params: FeatureParams
     w: Array
     eps: Array
+    f0_train: Array  # GP prior draws at train points
+    f0_test: Array  # GP prior draws at test points

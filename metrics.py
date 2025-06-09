@@ -12,9 +12,7 @@ def _rmse(y_pred, y_gt):
 
 
 def _llh(y_pred_mean, y_pred_std, y_gt):
-    return jnp.mean(
-        jax.scipy.stats.norm.logpdf(y_gt, loc=y_pred_mean, scale=y_pred_std)
-    )
+    return jnp.mean(jax.scipy.stats.norm.logpdf(y_gt, loc=y_pred_mean, scale=y_pred_std))
 
 
 @partial(jax.jit, static_argnums=1)
@@ -33,9 +31,7 @@ def mll_exact(train_ds: Dataset, kernel_fn: Callable, model_params: ModelParams)
 
 
 @partial(jax.jit, static_argnums=2)
-def compute_metrics_exact(
-    train_ds: Dataset, test_ds: Dataset, kernel_fn: Callable, model_params: ModelParams
-):
+def compute_metrics_exact(train_ds: Dataset, test_ds: Dataset, kernel_fn: Callable, model_params: ModelParams):
     K_train = kernel_fn(train_ds.x, train_ds.x, model_params.kernel_params)
     K_test_train = kernel_fn(test_ds.x, train_ds.x, model_params.kernel_params)
     K_test = kernel_fn(test_ds.x, test_ds.x, model_params.kernel_params)
@@ -45,9 +41,7 @@ def compute_metrics_exact(
     H_cho_factor, lower = jax.scipy.linalg.cho_factor(H)
     H_inv_y = jax.scipy.linalg.cho_solve((H_cho_factor, lower), train_ds.y)
     H_inv_K_train = jax.scipy.linalg.cho_solve((H_cho_factor, lower), K_train)
-    H_inv_K_train_test = jax.scipy.linalg.cho_solve(
-        (H_cho_factor, lower), K_test_train.T
-    )
+    H_inv_K_train_test = jax.scipy.linalg.cho_solve((H_cho_factor, lower), K_test_train.T)
 
     data_fit_term = -0.5 * jnp.dot(train_ds.y, H_inv_y)
     log_det_term = -jnp.log(jnp.diag(H_cho_factor)).sum()
@@ -98,13 +92,10 @@ def compute_metrics_samples(
     y_pred_mean = temp[:, 0]
     correction = temp[:, 1:]
 
-    f0 = feature_vec_prod_fn(
-        train_ds.x, train_state.eps, model_params, train_state.feature_params,
-        train_state.w, batch_size=batch_size)
-    
-    y_pred_std = jnp.sqrt(
-        jnp.mean((f0 - correction) ** 2, axis=1) + (model_params.noise_scale**2)
-    )
+    # Use stored f0_train instead of recomputing
+    f0 = train_state.f0_train
+
+    y_pred_std = jnp.sqrt(jnp.mean((f0 - correction) ** 2, axis=1) + (model_params.noise_scale**2))
 
     train_rmse = _rmse(y_pred_mean, train_ds.y)
     train_llh = _llh(y_pred_mean, y_pred_std, train_ds.y)
@@ -113,16 +104,10 @@ def compute_metrics_samples(
     y_pred_mean = temp[:, 0]
     correction = temp[:, 1:]
 
-    # can't give train_state.eps here as not same shape
-    key, feature_params_key, w_key, eps_key = jr.split(train_state.key, 4)
-    eps = jr.normal(eps_key, shape=(test_ds.x.shape[0], train_state.v0.shape[1] - 1))
-    f0 = feature_vec_prod_fn(
-        test_ds.x, eps, model_params, train_state.feature_params,
-        train_state.w, batch_size=batch_size)
-    
-    y_pred_std = jnp.sqrt(
-        jnp.mean((f0 - correction) ** 2, axis=1) + (model_params.noise_scale**2)
-    )
+    # Use stored f0_test instead of recomputing
+    f0 = train_state.f0_test
+
+    y_pred_std = jnp.sqrt(jnp.mean((f0 - correction) ** 2, axis=1) + (model_params.noise_scale**2))
 
     test_rmse = _rmse(y_pred_mean, test_ds.y)
     test_llh = _llh(y_pred_mean, y_pred_std, test_ds.y)

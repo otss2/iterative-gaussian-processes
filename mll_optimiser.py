@@ -35,7 +35,7 @@ def fit(
 ):
     if cfg.estimator_name not in ["exact", "standard", "pathwise"]:
         raise ValueError(f"Unknown estimator name {cfg.estimator_name}")
-    
+
     if cfg.use_symmetric_features:
         feature_vec_prod_fn = additions.feature_vec_prod_sym
     else:
@@ -43,7 +43,8 @@ def fit(
 
     gradient_estimator = partial(
         gradient_estimator,
-        ds=train_ds,
+        train_ds=train_ds,
+        test_ds=test_ds,
         kernel_fn=kernel_fn,
         kernel_grad_fn=kernel_grad_fn,
         feature_params_fn=feature_params_fn,
@@ -76,7 +77,7 @@ def fit(
                 length_scale=jnp.array(train_ds.D * [cfg.length_scale_init]),
             )
             model_params_init = ModelParams(noise_scale=cfg.noise_scale_init, kernel_params=kernel_params_init)
-            
+
         model_params_init = jax.tree.map(float_cast, model_params_init)
         print("Initial model_params:")
         print(model_params_init)
@@ -92,7 +93,7 @@ def fit(
                 if cfg.estimator_name == "standard":
                     key, z_key = jr.split(key)
                     z = jr.normal(z_key, shape=(train_ds.N, cfg.n_samples))
-                    train_state = TrainState(key=key, v0=v0, z=z, feature_params=None, w=None, eps=None)
+                    train_state = TrainState(key=key, v0=v0, z=z, feature_params=None, w=None, eps=None, f0_train=None, f0_test=None)
                 elif cfg.estimator_name == "pathwise":
                     if cfg.pathwise_init:
                         train_state = jnp.load("./download/pathwise_init.npy", allow_pickle=True).item()[cfg.dataset_name][
@@ -102,15 +103,16 @@ def fit(
                         key, feature_params_key, w_key, eps_key = jr.split(key, 4)
                         feature_params = feature_params_fn(feature_params_key, train_ds.D, cfg.n_features)
                         w = jr.normal(w_key, shape=(cfg.n_features, cfg.n_samples))
-                        eps = jr.normal(eps_key, shape=(train_ds.N, cfg.n_samples))
-                        train_state = TrainState(key=key, v0=v0, z=None, feature_params=feature_params, w=w, eps=eps)
+                        eps = jr.normal(eps_key, shape=(train_ds.N + test_ds.N, cfg.n_samples))
+                        train_state = TrainState(key=key, v0=v0, z=None, feature_params=feature_params, w=w, eps=eps, f0_train=None, f0_test=None)
             else:
-                train_state = TrainState(key=key, v0=v0, z=None, feature_params=None, w=None, eps=None)
+                train_state = TrainState(key=key, v0=v0, z=None, feature_params=None, w=None, eps=None, f0_train=None, f0_test=None)
         train_state = jax.tree.map(lambda x: float_cast(x) if isinstance(x, Array) and jnp.issubdtype(x, jnp.floating) else x, train_state)
 
         train_time = 0.0
         solver_time = 0.0
         eval_time = 0.0
+        cumulative_solver_iters = 0
         i_init = 0
     else:
         print("Initial model_params:")
@@ -121,6 +123,7 @@ def fit(
         train_time = checkpoint["train_time"]
         solver_time = checkpoint["solver_time"]
         eval_time = checkpoint["eval_time"]
+        cumulative_solver_iters = checkpoint["cumulative_solver_iters"]
         i_init = checkpoint["step"]
 
     @jax.jit
@@ -153,7 +156,7 @@ def fit(
 
         return train_state, model_params_u, opt_state, solver_iters, solver_time, r_norm_y, r_norm_z
 
-    def log(i, model_params_u, train_time, solver_time, solver_iters, r_norm_y, r_norm_z, commit=True):
+    def log(i, model_params_u, train_time, solver_time, solver_iters, cumulative_solver_iters, r_norm_y, r_norm_z, commit=True):
         model_params = _transform(model_params_u)
         if cfg.log_metrics_exact:
             mll, train_rmse, train_llh, test_rmse, test_llh = compute_metrics_exact(train_ds, test_ds, kernel_fn, model_params)
@@ -182,7 +185,14 @@ def fit(
             if cfg.estimator_name != "exact":
                 info.update({"solver_time": solver_time})
                 if cfg.solver_name != "cholesky":
-                    info.update({"solver_iters": solver_iters, "r_norm_y": r_norm_y, "r_norm_z": r_norm_z})
+                    info.update(
+                        {
+                            "solver_iters": solver_iters,
+                            "cumulative_solver_iters": cumulative_solver_iters,
+                            "r_norm_y": r_norm_y,
+                            "r_norm_z": r_norm_z,
+                        }
+                    )
 
             wandb.log(info, commit=commit)
 
@@ -197,13 +207,13 @@ def fit(
             if cfg.estimator_name != "exact":
                 info_str += f", solver_time: {solver_time:.2f}"
                 if cfg.solver_name != "cholesky":
-                    info_str += f", solver_iters: {solver_iters}, r_norm_y: {r_norm_y:.4f}, r_norm_z: {r_norm_z:.4f}"
+                    info_str += f", solver_iters: {solver_iters}, cumulative_solver_iters: {cumulative_solver_iters}, r_norm_y: {r_norm_y:.4f}, r_norm_z: {r_norm_z:.4f}"
 
             print(info_str, end="\n" if commit else ", ")
 
     running_pred = (cfg.estimator_name == "pathwise") and cfg.log_metrics_samples
     if (i_init == 0) and (cfg.log_wandb or cfg.log_verbose):
-        log(0, model_params_u, 0.0, 0.0, 0, 0.0, 0.0, commit=(not running_pred))
+        log(0, model_params_u, 0.0, 0.0, 0, 0, 0.0, 0.0, commit=(not running_pred))
 
     for i in range(i_init, cfg.n_iterations + int(running_pred)):
         update_start = time.time()
@@ -215,6 +225,7 @@ def fit(
 
         solver_time += solver_time_i
         train_time += update_end - update_start
+        cumulative_solver_iters += solver_iters
 
         if cfg.log_wandb or cfg.log_verbose:
             if running_pred:
@@ -256,7 +267,17 @@ def fit(
                         f"test_llh_samples: {test_llh_samples:.4f}"
                     )
             if (not running_pred) or (i < cfg.n_iterations):
-                log(i + 1, model_params_u_next, train_time, solver_time, solver_iters, r_norm_y, r_norm_z, commit=(not running_pred))
+                log(
+                    i + 1,
+                    model_params_u_next,
+                    train_time,
+                    solver_time,
+                    solver_iters,
+                    cumulative_solver_iters,
+                    r_norm_y,
+                    r_norm_z,
+                    commit=(not running_pred),
+                )
 
         model_params_u = model_params_u_next
 
@@ -269,6 +290,7 @@ def fit(
                 "train_time": train_time,
                 "solver_time": solver_time,
                 "eval_time": eval_time,
+                "cumulative_solver_iters": cumulative_solver_iters,
                 "step": i + 1,
             }
             return checkpoint
@@ -281,6 +303,7 @@ def fit(
         "train_time": train_time,
         "solver_time": solver_time,
         "eval_time": eval_time,
+        "cumulative_solver_iters": cumulative_solver_iters,
         "step": cfg.n_iterations + 1,
     }
     return checkpoint

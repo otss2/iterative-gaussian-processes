@@ -58,7 +58,16 @@ def get_wandb_name(cfg: TrainConfig):
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def main(cfg: TrainConfig):
     os.environ["WANDB_API_KEY"] = cfg.wandb_api_key
-    run_name = get_wandb_name(cfg)
+
+    # Get the config source path from Hydra
+    hydra_cfg = hydra.core.hydra_config.HydraConfig.get()
+    # Get the full config path from the runtime config
+    try:
+        run_name = hydra_cfg.runtime.choices.exp1
+    except:
+        run_name = get_wandb_name(cfg)
+    print(f"\nUsing run name: {run_name}")
+
     checkpoint_path = f"./checkpoints/{run_name}.npy"
 
     if cfg.checkpoint_interval > 0 and os.path.exists(checkpoint_path):
@@ -80,7 +89,7 @@ def main(cfg: TrainConfig):
         settings=wandb.Settings(start_method="thread"),
         config=omegaconf.OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True),
         mode="online" if cfg.log_wandb else "disabled",
-        name=get_wandb_name(cfg),
+        name=run_name,
         id=run_id,
         resume="allow",
     ) as run:
@@ -115,5 +124,5 @@ def _main(cfg: TrainConfig, checkpoint: dict, run_name: str, run_id: str):
 
 
 if __name__ == "__main__":
-    # jax_config.update("jax_disable_jit", True)
+    #jax_config.update("jax_disable_jit", True)
     main()
