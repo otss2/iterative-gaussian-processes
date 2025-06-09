@@ -1,0 +1,5 @@
+pol 10
+elev 10
+bike 10
+prot 4
+kegg 4

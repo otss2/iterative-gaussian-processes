@@ -29,15 +29,15 @@ def find_yaml_configs(base_path):
             variant_path = dataset_path / variant
             if not variant_path.exists():
                 continue
-            for file in variant_path.glob("split*.yaml"):
-                split_num = int(file.stem.replace("split", ""))
+            for file in variant_path.glob("*.yaml"):
+                split_num = int(file.stem)
                 all_splits.add(split_num)
 
         # For each split number
         for split_num in sorted(all_splits):
             # First vanilla, then sym
             for variant in ["vanilla", "sym"]:
-                config_path = dataset_path / variant / f"split{split_num}.yaml"
+                config_path = dataset_path / variant / f"{split_num}.yaml"
                 if config_path.exists():
                     # Get path relative to base_path and remove .yaml extension
                     relative_path = config_path.relative_to(base_path)
@@ -50,6 +50,7 @@ def find_yaml_configs(base_path):
 def main():
     parser = argparse.ArgumentParser(description="Run Hydra experiments from a specified folder.")
     parser.add_argument("folder", type=str, help="Parent folder within conf/ to search for experiments (e.g., exp1)")
+    parser.add_argument("--list", action="store_true", help="List all configurations without running them")
     args = parser.parse_args()
 
     # Path to your experiment configs
@@ -61,6 +62,13 @@ def main():
 
     # Find all yaml configs (excluding base configs)
     configs = find_yaml_configs(exp_path)
+
+    print(f"Found {len(configs)} configurations in {args.folder}")
+
+    if args.list:
+        for config in configs:
+            print(f" - {config}")
+        return
 
     if not configs:
         print(f"No yaml configs found in {exp_path}")

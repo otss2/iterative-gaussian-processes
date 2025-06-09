@@ -1,9 +1,0 @@
-# @package _global_
-
-defaults:
-  - /config
-
-# Experiment-specific settings
-dataset_name: bike
-dataset_split: 2
-use_symmetric_features: true 

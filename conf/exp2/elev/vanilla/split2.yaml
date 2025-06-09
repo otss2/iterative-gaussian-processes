@@ -1,9 +1,0 @@
-# @package _global_
-
-defaults:
-  - /config
-
-# Experiment-specific settings
-dataset_name: elevators
-dataset_split: 2
-use_symmetric_features: false 
